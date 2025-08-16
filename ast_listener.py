@@ -29,6 +29,7 @@ class ASTBuilder(TSqlParserListener):
         self.block_stack = []
         self.last_if_block = None
         self.schema_registry = {}
+        self.schema_metadata = {}
 
     def _append_statement(self, stmt):
         try:
@@ -555,7 +556,7 @@ class ASTBuilder(TSqlParserListener):
         try:
             condition = normalize_sql(ctx.search_condition().getText())
 
-            # ✅ Detect FETCH loop for cursor
+            # ✅ Detect FETCH loop pattern: WHILE @@FETCH_STATUS = 0
             if condition.upper().replace(" ", "") == "@@FETCH_STATUS=0":
                 for cursor_name, info in self.cursor_blocks.items():
                     if "fetch_loop" not in info:
@@ -567,24 +568,27 @@ class ASTBuilder(TSqlParserListener):
                             fetch_into = info["initial_fetch"].get(
                                 "fetch_into", [])
 
+                        # ✅ Create CURSOR_LOOP node
                         cursor_loop = {
                             "type": "CURSOR_LOOP",
                             "cursor_name": cursor_name,
+                            "condition": "@@FETCH_STATUS = 0",  # Optional
                             "fetch_into": fetch_into,
                             "body": []
                         }
 
-                        # Merge initial fetch into loop body
+                        # ✅ Merge initial fetch if present
                         if "initial_fetch" in info:
                             cursor_loop["body"].append(info["initial_fetch"])
                             del info["initial_fetch"]
 
+                        # Save and push
                         info["fetch_loop"] = cursor_loop
                         self._append_statement(cursor_loop)
                         self.statement_stack.append(cursor_loop["body"])
                         return  # ✅ Skip normal WHILE handling
 
-            # ✅ Normal WHILE block
+            # ✅ Normal WHILE (not cursor loop)
             while_block = {
                 "type": "WHILE",
                 "condition": condition,
@@ -716,64 +720,73 @@ class ASTBuilder(TSqlParserListener):
         except Exception as e:
             print(f"Error in enterOpen_cursor: {e}")
 
-    def enterFetch_cursor_statement(self, ctx):
+        # --- Add this shared handler once ---
+    def _handle_fetch_cursor(self, ctx):
         try:
-            cursor_name = ctx.cursor_name().getText() if ctx.cursor_name() else "<UNKNOWN>"
+            # Try to extract cursor name (works for several ctx shapes)
+            cursor_name = None
+            if hasattr(ctx, "cursor_name") and ctx.cursor_name():
+                cursor_name = ctx.cursor_name().getText()
+            elif hasattr(ctx, "children"):
+                # Fallback: scan tokens around FROM
+                txt = ctx.start.getInputStream().getText(ctx.start.start, ctx.stop.stop)
+                m = re.search(r"\bFROM\s+([A-Za-z0-9_#]+)", txt, re.IGNORECASE)
+                cursor_name = m.group(1) if m else "<UNKNOWN>"
+            else:
+                cursor_name = "<UNKNOWN>"
 
-            # ✅ Try extracting fetch_into variables dynamically
+            # Extract fetch_into variables
             fetch_into = []
-            if ctx.LOCAL_ID():
+            if hasattr(ctx, "LOCAL_ID") and ctx.LOCAL_ID():
                 fetch_into = [v.getText() for v in ctx.LOCAL_ID()]
             else:
-                # fallback: parse from full text
-                full_text = ctx.getText()
-                after_into = re.search(
-                    r"\bINTO\s+(.+)", full_text, re.IGNORECASE)
-                if after_into:
-                    fetch_into = [v.strip()
-                                  for v in after_into.group(1).split(",")]
+                full_text = ctx.start.getInputStream().getText(ctx.start.start, ctx.stop.stop)
+                m = re.search(r"\bINTO\s+(.+)", full_text, re.IGNORECASE)
+                if m:
+                    fetch_into = [v.strip() for v in m.group(1).split(",")]
 
-            # ✅ Assign inferred types if available
-            cursor_info = self.cursor_blocks.get(cursor_name, {})
-            columns = cursor_info.get("columns", [])
+            # Ensure cursor bucket exists
+            if cursor_name not in self.cursor_blocks:
+                self.cursor_blocks[cursor_name] = {}
+
+            # Type inference from declared cursor columns (if any)
+            columns = self.cursor_blocks[cursor_name].get("columns", [])
             for i, var in enumerate(fetch_into):
-                inferred_type = None
-                if i < len(columns):
-                    inferred_type = columns[i][1]
+                inferred_type = columns[i][1] if i < len(columns) else None
                 self._ensure_variable_exists(var, inferred_type)
 
-            # ✅ Save last fetch info for fallback
-            cursor_info["last_fetch_into"] = fetch_into
-            self.cursor_blocks[cursor_name] = cursor_info
+            # Save the last fetch vars so WHILE can pick them up
+            self.cursor_blocks[cursor_name]["last_fetch_into"] = fetch_into
 
-            # ✅ Update CURSOR_LOOP block fetch_into if exists
-            cursor_loop = cursor_info.get("fetch_loop")
-            if cursor_loop:
-                cursor_loop["fetch_into"] = fetch_into
-                self.statement_stack.append(cursor_loop["body"])
+            # If we already created the loop, update it now
+            loop = self.cursor_blocks[cursor_name].get("fetch_loop")
+            if loop:
+                loop["fetch_into"] = fetch_into
+                # push loop body so subsequent statements go inside the loop
+                self.statement_stack.append(loop["body"])
             else:
-                # If loop not yet created, store initial fetch
-                self.cursor_blocks.setdefault(cursor_name, {})["initial_fetch"] = {
+                # store initial fetch so we can merge into loop body later
+                self.cursor_blocks[cursor_name]["initial_fetch"] = {
                     "type": "FETCH",
                     "cursor_name": cursor_name,
                     "fetch_into": fetch_into
                 }
 
         except Exception as e:
-            print(f"Error in enterFetch_cursor_statement: {e}")
+            print(f"Error in _handle_fetch_cursor: {e}")
 
-    def exitFetch_cursor_statement(self, ctx):
-        try:
-            cursor_name = ctx.cursor_name().getText() if ctx.cursor_name() else "<UNKNOWN>"
-            fetch_into = self.cursor_blocks.get(
-                cursor_name, {}).get("last_fetch_into", [])
-            if fetch_into:
-                cursor_loop = self.cursor_blocks.get(
-                    cursor_name, {}).get("fetch_loop")
-                if cursor_loop:
-                    cursor_loop["fetch_into"] = fetch_into
-        except Exception as e:
-            print(f"Error in exitFetch_cursor_statement: {e}")
+    # --- Bind the handler to multiple possible rule names ---
+    def enterFetch_cursor(self, ctx):           # some grammars use this
+        self._handle_fetch_cursor(ctx)
+
+    def enterFetch_cursor_statement(self, ctx):  # your current guess
+        self._handle_fetch_cursor(ctx)
+
+    def enterFetch_statement(self, ctx):        # some grammars use this
+        self._handle_fetch_cursor(ctx)
+
+    def enterFetch(self, ctx):                  # last-resort catch-all if present
+        self._handle_fetch_cursor(ctx)
 
     def enterClose_cursor(self, ctx):
         try:
@@ -1017,17 +1030,22 @@ class ASTBuilder(TSqlParserListener):
     def exitCreate_procedure(self, ctx):
         try:
             proc_obj = self.proc_stack.pop()
-            self.ast.append(proc_obj)
             self.statement_stack.pop()
             self.current_proc = None
 
-            # ✅ Patch any incomplete cursor loops (fetch_into still empty)
+            # ✅ Final patch: if any cursor loop still has empty fetch_into, fill it from last_fetch_into
             for cursor_name, info in self.cursor_blocks.items():
                 if "fetch_loop" in info:
                     loop = info["fetch_loop"]
                     if not loop.get("fetch_into") or len(loop["fetch_into"]) == 0:
                         if "last_fetch_into" in info:
                             loop["fetch_into"] = info["last_fetch_into"]
+                        else:
+                            # ✅ Fallback: parse fetch vars from full SQL text if nothing found
+                            loop["fetch_into"] = ["<UNKNOWN_VAR>"]
+
+            self.ast.append(proc_obj)
+
         except Exception as e:
             print(f"❌ Error exiting CREATE PROCEDURE: {e}")
 
