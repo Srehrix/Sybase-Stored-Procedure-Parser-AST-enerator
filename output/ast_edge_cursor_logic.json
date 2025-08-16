@@ -1,0 +1,34 @@
+[
+  {
+    "proc_name": "edge_cursor_logic",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@id",
+        "type": "INT"
+      },
+      {
+        "name": "@name",
+        "type": "TEXT"
+      }
+    ],
+    "statements": [
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT id, name FROM users WHERE active = 1;",
+        "into_vars": []
+      },
+      {
+        "type": "WHILE",
+        "condition": "@@FETCH_STATUS = 0",
+        "body": [
+          {
+            "type": "INSERT",
+            "query": "INSERT INTO audit_log(user_id, message) VALUES(@id, @name);"
+          }
+        ]
+      }
+    ]
+  }
+]

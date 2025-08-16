@@ -1,0 +1,51 @@
+[
+  {
+    "proc_name": "AcmeERP.usp_CalculateFifoCost",
+    "params": [
+      {
+        "name": "@ProductID",
+        "type": "INT",
+        "mode": "IN"
+      },
+      {
+        "name": "@QuantityRequested",
+        "type": "INT",
+        "mode": "IN"
+      }
+    ],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": [
+      {
+        "type": "IF",
+        "condition": "OBJECT_ID('AcmeERP.usp_CalculateFifoCost','P')ISNOTNULL",
+        "then": [
+          {
+            "type": "DROP_PROCEDURE",
+            "proc_name": "AcmeERP.usp_ProcessPayroll"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "WITH_EXPRESSION",
+        "ctes": [
+          {
+            "name": "CTE_FIFO",
+            "query": "( SELECT MOVEMENTID, PRODUCTID, QUANTITY, UNITCOST, SUM(QUANTITY) OVER (PARTITION BY PRODUCTID ORDER BY MOVEMENTDATE ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS RUNNINGTOTAL FROM ACMEERP.STOCKMOVEMENTS WHERE PRODUCTID = @PRODUCTID AND DIRECTION = 'IN' )"
+          }
+        ]
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT MovementID, ProductID, Quantity, UnitCost, SUM(Quantity) OVER (PARTITION BY ProductID ORDER BY MovementDate ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS RunningTotal FROM AcmeERP.StockMovements WHERE ProductID = @ProductID AND Direction = 'IN'",
+        "into_vars": []
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT AVG(UnitCost) AS FifoCostEstimate FROM CTE_FIFO WHERE RunningTotal <= @QuantityRequested;",
+        "into_vars": []
+      }
+    ]
+  }
+]

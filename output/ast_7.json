@@ -1,0 +1,179 @@
+[
+  {
+    "proc_name": "ultimate_edge_case_proc",
+    "params": [
+      {
+        "name": "@user_id",
+        "type": "INTEGER",
+        "mode": "IN"
+      },
+      {
+        "name": "@result_msg",
+        "type": "TEXT",
+        "mode": "IN"
+      }
+    ],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@loop_counter",
+        "type": "INTEGER"
+      },
+      {
+        "name": "@temp_value",
+        "type": "NUMERIC"
+      },
+      {
+        "name": "@status_flag",
+        "type": "INTEGER"
+      },
+      {
+        "name": "@dynamic_sql",
+        "type": "TEXT"
+      },
+      {
+        "name": "@cursor_user_id",
+        "type": "INTEGER"
+      },
+      {
+        "name": "@cursor_user_name",
+        "type": "TEXT"
+      }
+    ],
+    "statements": [
+      {
+        "type": "DECLARE_TEMP_TABLE",
+        "table": "#TempTable"
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT @status_flag = COUNT( * ) FROM users WHERE id = @user_id",
+        "into_vars": []
+      },
+      {
+        "type": "IF",
+        "condition": "@status_flag > 0",
+        "then": [
+          {
+            "type": "SET",
+            "name": "@loop_counter",
+            "value": "0"
+          },
+          {
+            "type": "WHILE",
+            "condition": "@loop_counter < 5",
+            "body": [
+              {
+                "type": "SET",
+                "name": "@loop_counter",
+                "value": "@loop_counter + 1"
+              },
+              {
+                "type": "SET",
+                "name": "@dynamic_sql",
+                "value": "'UPDATE logs SET status = ''processed'' WHERE user_id = ' + CAST(@user_id AS VARCHAR) + ' AND attempt = ' + CAST(@loop_counter AS VARCHAR)"
+              },
+              {
+                "type": "EXECUTE_USING",
+                "sql_variable": "@dynamic_sql"
+              },
+              {
+                "type": "IF",
+                "condition": "@loop_counter = 3",
+                "then": [
+                  {
+                    "type": "SET",
+                    "name": "@temp_value",
+                    "value": "999.99"
+                  },
+                  {
+                    "type": "IF",
+                    "condition": "@loop_counter > 3",
+                    "then": [
+                      {
+                        "type": "SET",
+                        "name": "@temp_value",
+                        "value": "123.45"
+                      },
+                      {
+                        "type": "SET",
+                        "name": "@temp_value",
+                        "value": "0.00"
+                      }
+                    ],
+                    "else": []
+                  }
+                ],
+                "else": []
+              },
+              {
+                "type": "TRY",
+                "body": [
+                  {
+                    "type": "EXECUTE_PROCEDURE",
+                    "procedure": "log_attempt",
+                    "args": [
+                      "@user_id",
+                      "@loop_counter"
+                    ]
+                  },
+                  {
+                    "type": "RAISE",
+                    "message": "Logging attempt failed!"
+                  }
+                ],
+                "catch": []
+              }
+            ]
+          },
+          {
+            "type": "SET",
+            "name": "@result_msg",
+            "value": "'User does not exist.'"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT id, name FROM users WHERE active = 1",
+        "into_vars": []
+      },
+      {
+        "type": "WHILE",
+        "condition": "@@FETCH_STATUS = 0",
+        "body": [
+          {
+            "type": "INSERT",
+            "query": "INSERT INTO audit_log (user_id, message) VALUES (@cursor_user_id, @cursor_user_name)"
+          }
+        ]
+      },
+      {
+        "type": "TRY",
+        "body": [
+          {
+            "type": "EXECUTE_PROCEDURE",
+            "procedure": "finalize_process",
+            "args": [
+              "@user_id"
+            ]
+          },
+          {
+            "type": "RAISE",
+            "message": "PRINT"
+          },
+          {
+            "type": "RETURN",
+            "expression": "-1"
+          }
+        ],
+        "catch": []
+      },
+      {
+        "type": "RETURN",
+        "expression": "0"
+      }
+    ]
+  }
+]

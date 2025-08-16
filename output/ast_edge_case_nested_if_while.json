@@ -1,0 +1,53 @@
+[
+  {
+    "proc_name": "edge_case_nested_if_while",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@i",
+        "type": "INT"
+      }
+    ],
+    "statements": [
+      {
+        "type": "SET",
+        "name": "@i",
+        "value": "0"
+      },
+      {
+        "type": "WHILE",
+        "condition": "@i < 3",
+        "body": [
+          {
+            "type": "SET",
+            "name": "@i",
+            "value": "@i + 1"
+          },
+          {
+            "type": "IF",
+            "condition": "@i = 2",
+            "then": [
+              {
+                "type": "EXECUTE_PROCEDURE",
+                "procedure": "log_event",
+                "args": [
+                  "@i"
+                ]
+              },
+              {
+                "type": "RETURN",
+                "expression": "-1"
+              }
+            ],
+            "else": []
+          }
+        ]
+      },
+      {
+        "type": "RETURN",
+        "expression": "0"
+      }
+    ]
+  }
+]

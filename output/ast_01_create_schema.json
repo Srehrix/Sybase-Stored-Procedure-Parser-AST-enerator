@@ -1,0 +1,13 @@
+[
+  {
+    "proc_name": "",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": []
+  },
+  {
+    "type": "CREATE_SCHEMA",
+    "schema_name": "AcmeERP"
+  }
+]

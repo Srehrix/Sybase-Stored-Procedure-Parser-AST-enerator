@@ -1,0 +1,20 @@
+[
+  {
+    "proc_name": "",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": [
+      {
+        "type": "DECLARE_CURSOR",
+        "cursor_name": "user_cursor",
+        "query": "SELECTid,nameFROMusersWHEREactive = 1;"
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT id, name FROM users WHERE active = 1;",
+        "into_vars": []
+      }
+    ]
+  }
+]

@@ -1,0 +1,66 @@
+[
+  {
+    "proc_name": "edge_full_cursor_block",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@id",
+        "type": "INT"
+      },
+      {
+        "name": "@name",
+        "type": "VARCHAR(100)"
+      }
+    ],
+    "statements": [
+      {
+        "type": "CURSOR_BLOCK",
+        "cursor_name": "user_cursor",
+        "declare": {
+          "type": "DECLARE_CURSOR",
+          "cursor_name": "user_cursor",
+          "query": "SELECT id, name FROM users WHERE active = 1;"
+        },
+        "open": {
+          "type": "OPEN_CURSOR",
+          "cursor_name": "user_cursor"
+        },
+        "fetch_loop": {
+          "type": "WHILE",
+          "condition": "@@FETCH_STATUS = 0",
+          "body": [
+            {
+              "type": "FETCH",
+              "cursor_name": "user_cursor",
+              "fetch_into": [
+                "@id",
+                "@name"
+              ]
+            },
+            {
+              "type": "INSERT",
+              "query": "INSERT INTO audit_log(user_id, message) VALUES (@id, @name);"
+            },
+            {
+              "type": "FETCH",
+              "cursor_name": "user_cursor",
+              "fetch_into": [
+                "@id",
+                "@name"
+              ]
+            }
+          ]
+        },
+        "close": {
+          "type": "CLOSE_CURSOR",
+          "cursor_name": "user_cursor"
+        },
+        "deallocate": {
+          "type": "DEALLOCATE_CURSOR",
+          "cursor_name": "user_cursor"
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,86 @@
+[
+  {
+    "proc_name": "",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": [
+      {
+        "type": "CREATE_TABLE",
+        "table_name": "AcmeERP.Employees",
+        "columns": [
+          {
+            "name": "EmployeeID",
+            "data_type": "INT"
+          },
+          {
+            "name": "FirstName",
+            "data_type": "NVARCHAR(50)"
+          },
+          {
+            "name": "LastName",
+            "data_type": "NVARCHAR(50)"
+          },
+          {
+            "name": "Department",
+            "data_type": "NVARCHAR(50)"
+          },
+          {
+            "name": "Position",
+            "data_type": "NVARCHAR(50)"
+          },
+          {
+            "name": "HireDate",
+            "data_type": "DATE"
+          },
+          {
+            "name": "BaseSalary",
+            "data_type": "DECIMAL(18,2)"
+          },
+          {
+            "name": "Currency",
+            "data_type": "CHAR(3)"
+          }
+        ]
+      },
+      {
+        "type": "CREATE_TABLE",
+        "table_name": "AcmeERP.PayrollLogs",
+        "columns": [
+          {
+            "name": "PayrollID",
+            "data_type": "INT"
+          },
+          {
+            "name": "EmployeeID",
+            "data_type": "INT"
+          },
+          {
+            "name": "PayPeriodStart",
+            "data_type": "DATE"
+          },
+          {
+            "name": "PayPeriodEnd",
+            "data_type": "DATE"
+          },
+          {
+            "name": "GrossSalary",
+            "data_type": "DECIMAL(18,2)"
+          },
+          {
+            "name": "TaxDeducted",
+            "data_type": "DECIMAL(18,2)"
+          },
+          {
+            "name": "NetSalary",
+            "data_type": "<UNKNOWN>"
+          },
+          {
+            "name": "Paid",
+            "data_type": "BIT"
+          }
+        ]
+      }
+    ]
+  }
+]

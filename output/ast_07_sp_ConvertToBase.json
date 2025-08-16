@@ -1,0 +1,88 @@
+[
+  {
+    "proc_name": "AcmeERP.usp_ConvertToBase",
+    "params": [
+      {
+        "name": "@CurrencyCode",
+        "type": "CHAR",
+        "mode": "IN"
+      },
+      {
+        "name": "@Amount",
+        "type": "DECIMAL",
+        "mode": "IN"
+      },
+      {
+        "name": "@ConversionDate",
+        "type": "DATE",
+        "mode": "IN"
+      }
+    ],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@Rate",
+        "type": "DECIMAL"
+      }
+    ],
+    "statements": [
+      {
+        "type": "IF",
+        "condition": "OBJECT_ID('AcmeERP.usp_ConvertToBase','P') IS NOT NULL",
+        "then": [
+          {
+            "type": "DROP_PROCEDURE",
+            "procedure": "AcmeERP.usp_ProcessPayroll"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "SET",
+        "name": "@Rate",
+        "value": "SELECT @Rate = RateToBase FROM AcmeERP.ExchangeRates WHERE CurrencyCode = @CurrencyCode AND RateDate = @ConversionDate"
+      },
+      {
+        "type": "IF",
+        "condition": "@Rate IS NULL",
+        "then": [
+          {
+            "type": "SELECT_INTO",
+            "query": "SELECT TOP 1 @Rate = RateToBase FROM AcmeERP.ExchangeRates WHERE CurrencyCode = @CurrencyCode AND RateDate < @ConversionDate ORDER BY RateDate DESC",
+            "into_vars": []
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "IF",
+        "condition": "@Rate IS NULL",
+        "then": [
+          {
+            "type": "SET",
+            "name": "@Rate",
+            "value": "SELECT @Rate = AVG(RateToBase) FROM AcmeERP.ExchangeRates WHERE CurrencyCode = @CurrencyCode AND RateDate BETWEEN DATEADD(DAY, -7, @ConversionDate) AND @ConversionDate"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "IF",
+        "condition": "@Rate IS NULL",
+        "then": [
+          {
+            "type": "SET",
+            "name": "@Rate",
+            "value": "1"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT @Amount * @Rate AS ConvertedAmount",
+        "into_vars": []
+      }
+    ]
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "proc_name": "",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": [
+      {
+        "type": "CREATE_TABLE",
+        "table_name": "AcmeERP.Currencies",
+        "columns": [
+          {
+            "name": "CurrencyCode",
+            "data_type": "CHAR(3)"
+          },
+          {
+            "name": "CurrencyName",
+            "data_type": "NVARCHAR(50)"
+          }
+        ],
+        "constraints": [
+          {
+            "type": "PRIMARY_KEY",
+            "columns": [
+              "CurrencyCode"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "CREATE_TABLE",
+        "table_name": "AcmeERP.ExchangeRates",
+        "columns": [
+          {
+            "name": "RateID",
+            "data_type": "INT",
+            "constraints": [
+              "IDENTITY"
+            ]
+          },
+          {
+            "name": "CurrencyCode",
+            "data_type": "CHAR(3)"
+          },
+          {
+            "name": "RateDate",
+            "data_type": "DATE"
+          },
+          {
+            "name": "RateToBase",
+            "data_type": "DECIMAL(18,6)"
+          }
+        ],
+        "constraints": [
+          {
+            "type": "PRIMARY_KEY",
+            "columns": [
+              "RateID"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

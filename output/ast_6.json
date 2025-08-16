@@ -1,0 +1,137 @@
+[
+  [
+    {
+      "proc_name": "[dbo].[sp_full_feature_test]",
+      "params": [
+        {
+          "name": "@emp_id",
+          "type": "INT",
+          "mode": "IN"
+        }
+      ],
+      "return_type": "VOID",
+      "variables": [
+        {
+          "name": "@task_count",
+          "type": "INT"
+        },
+        {
+          "name": "@i",
+          "type": "INT"
+        },
+        {
+          "name": "@message",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "@task_id",
+          "type": "INT"
+        }
+      ],
+      "statements": [
+        {
+          "type": "SET",
+          "name": "@task_count",
+          "value": "(SELECT COUNT(*) FROM Tasks WHERE EmployeeID = @emp_id)"
+        },
+        {
+          "type": "SELECT_INTO",
+          "query": "SELECT COUNT( * ) FROM Tasks WHERE EmployeeID = @emp_id",
+          "into_vars": []
+        },
+        {
+          "type": "SET",
+          "name": "@i",
+          "value": "1"
+        },
+        {
+          "type": "IF",
+          "condition": "@task_count > 0",
+          "then": [
+            {
+              "type": "SET",
+              "name": "@message",
+              "value": "'Tasks found.'"
+            },
+            {
+              "type": "WHILE",
+              "condition": "@i < = @task_count",
+              "body": [
+                {
+                  "type": "SELECT_INTO",
+                  "query": "SELECT @task_id = TaskID FROM ( SELECT TaskID, ROW_NUMBER() OVER (ORDER BY TaskID) AS rn FROM Tasks WHERE EmployeeID = @emp_id ) AS T WHERE rn = @i",
+                  "into_vars": []
+                },
+                {
+                  "type": "SELECT_INTO",
+                  "query": "SELECT TaskID, ROW_NUMBER() OVER (ORDER BY TaskID) AS rn FROM Tasks WHERE EmployeeID = @emp_id",
+                  "into_vars": []
+                },
+                {
+                  "type": "IF",
+                  "condition": "EXISTS(SELECT1FROMTasksWHERETaskID =@task_idANDStatus ='Pending')",
+                  "then": [
+                    {
+                      "type": "SELECT_INTO",
+                      "query": "SELECT 1 FROM Tasks WHERE TaskID = @task_id AND Status = 'Pending'",
+                      "into_vars": []
+                    },
+                    {
+                      "type": "SET",
+                      "name": "@message",
+                      "value": "'Processing pending task.'"
+                    },
+                    {
+                      "type": "UPDATE",
+                      "table": "Tasks",
+                      "set": {
+                        "Status": "'In Progress'"
+                      },
+                      "where": "TaskID = @task_id"
+                    },
+                    {
+                      "type": "DELETE",
+                      "query": "DELETE FROM Tasks WHERE TaskID = @task_id AND Status = 'Completed'"
+                    }
+                  ],
+                  "else": []
+                },
+                {
+                  "type": "SET",
+                  "name": "@i",
+                  "value": "@i + 1"
+                }
+              ]
+            },
+            {
+              "type": "SET",
+              "name": "@message",
+              "value": "'No tasks found. Creating default task.'"
+            },
+            {
+              "type": "INSERT",
+              "query": "INSERT INTO Tasks (EmployeeID, TaskName, Status) VALUES (@emp_id, 'Default Task', 'Pending')"
+            }
+          ],
+          "else": []
+        },
+        {
+          "type": "EXECUTE_PROCEDURE",
+          "procedure": "sp_log_message",
+          "args": [
+            "@message"
+          ]
+        },
+        {
+          "type": "SELECT_INTO",
+          "query": "SELECT @message AS FinalMessage",
+          "into_vars": []
+        },
+        {
+          "type": "RETURN",
+          "expression": null
+        }
+      ]
+    }
+  ]
+]

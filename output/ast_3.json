@@ -1,0 +1,65 @@
+[
+  {
+    "proc_name": "[dbo].[sp_check_employee]",
+    "params": [
+      {
+        "name": "@emp_id",
+        "type": "INT",
+        "mode": "IN"
+      },
+      {
+        "name": "@emp_name",
+        "type": "VARCHAR(100)",
+        "mode": "IN"
+      }
+    ],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@emp_exists",
+        "type": "INT"
+      },
+      {
+        "name": "@emp_message",
+        "type": "VARCHAR(200)"
+      }
+    ],
+    "statements": [
+      {
+        "type": "SET",
+        "name": "@emp_exists",
+        "value": "0"
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT @emp_exists = COUNT(*) FROM Employees WHERE EmployeeID = @emp_id AND Name = @emp_name",
+        "into_vars": []
+      },
+      {
+        "type": "IF",
+        "condition": "@emp_exists>0",
+        "then": [
+          {
+            "type": "SET",
+            "name": "@emp_message",
+            "value": "'Employee found'"
+          },
+          {
+            "type": "SET",
+            "name": "@emp_message",
+            "value": "'Employee not found'"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "SELECT_INTO",
+        "query": "SELECT @emp_message AS Message",
+        "into_vars": []
+      },
+      {
+        "type": "RETURN"
+      }
+    ]
+  }
+]

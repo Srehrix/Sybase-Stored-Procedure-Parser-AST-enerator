@@ -1,0 +1,68 @@
+[
+  {
+    "proc_name": "edge_case_nested_raises",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@i",
+        "type": "INT"
+      }
+    ],
+    "statements": [
+      {
+        "type": "SET",
+        "name": "@i",
+        "value": "0"
+      },
+      {
+        "type": "IF",
+        "condition": "@i = 0",
+        "then": [
+          {
+            "type": "WHILE",
+            "condition": "@i < 3",
+            "body": [
+              {
+                "type": "SET",
+                "name": "@i",
+                "value": "@i + 1"
+              },
+              {
+                "type": "IF",
+                "condition": "@i = 2",
+                "then": [
+                  {
+                    "type": "RAISE",
+                    "message": "Reached 2"
+                  },
+                  {
+                    "type": "IF",
+                    "condition": "@i = 3",
+                    "then": [
+                      {
+                        "type": "RAISE",
+                        "message": "THROW"
+                      }
+                    ],
+                    "else": []
+                  }
+                ],
+                "else": []
+              }
+            ]
+          },
+          {
+            "type": "RAISE",
+            "message": "End of loop"
+          }
+        ],
+        "else": []
+      },
+      {
+        "type": "RETURN",
+        "expression": "0"
+      }
+    ]
+  }
+]

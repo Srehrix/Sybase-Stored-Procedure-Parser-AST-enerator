@@ -1,0 +1,101 @@
+[
+  {
+    "proc_name": "",
+    "params": [],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": [
+      {
+        "type": "CREATE_TABLE",
+        "table_name": "AcmeERP.Products",
+        "columns": [
+          {
+            "name": "ProductID",
+            "data_type": "INT",
+            "constraints": [
+              "IDENTITY"
+            ]
+          },
+          {
+            "name": "ProductName",
+            "data_type": "NVARCHAR(100)",
+            "constraints": []
+          },
+          {
+            "name": "Category",
+            "data_type": "NVARCHAR(50)",
+            "constraints": []
+          },
+          {
+            "name": "CostMethod",
+            "data_type": "VARCHAR(10)",
+            "constraints": [
+              "CHECK (COSTMETHODIN('FIFO','LIFO')"
+            ]
+          },
+          {
+            "name": "CurrentStock",
+            "data_type": "INT",
+            "constraints": []
+          }
+        ],
+        "constraints": [
+          {
+            "type": "PRIMARY_KEY",
+            "columns": [
+              "ProductID"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "CREATE_TABLE",
+        "table_name": "AcmeERP.StockMovements",
+        "columns": [
+          {
+            "name": "MovementID",
+            "data_type": "INT",
+            "constraints": [
+              "IDENTITY"
+            ]
+          },
+          {
+            "name": "ProductID",
+            "data_type": "INT",
+            "constraints": []
+          },
+          {
+            "name": "MovementDate",
+            "data_type": "DATE",
+            "constraints": []
+          },
+          {
+            "name": "Quantity",
+            "data_type": "INT",
+            "constraints": []
+          },
+          {
+            "name": "UnitCost",
+            "data_type": "DECIMAL(18,2)",
+            "constraints": []
+          },
+          {
+            "name": "Direction",
+            "data_type": "VARCHAR(10)",
+            "constraints": [
+              "CHECK (DIRECTIONIN('IN','OUT')"
+            ]
+          }
+        ],
+        "constraints": [
+          {
+            "type": "PRIMARY_KEY",
+            "columns": [
+              "MovementID"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

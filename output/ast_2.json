@@ -1,0 +1,61 @@
+[
+  {
+    "proc_name": "dbo.sp_check_employee",
+    "params": [
+      {
+        "name": "@emp_id",
+        "type": "INT",
+        "mode": "IN"
+      },
+      {
+        "name": "@emp_name",
+        "type": "VARCHAR(100)",
+        "mode": "IN"
+      }
+    ],
+    "return_type": "VOID",
+    "variables": [
+      {
+        "name": "@emp_exists",
+        "type": "INT"
+      },
+      {
+        "name": "@emp_message",
+        "type": "VARCHAR(200)"
+      }
+    ],
+    "statements": [
+      {
+        "type": "SET",
+        "name": "@emp_exists",
+        "value": "0"
+      },
+      {
+        "type": "IF",
+        "condition": "@emp_exists>0",
+        "then": [
+          {
+            "type": "RAW",
+            "statement": "BEGINSET@emp_message='Employee found'END"
+          }
+        ],
+        "else": [
+          {
+            "type": "RAW",
+            "statement": "BEGINSET@emp_message='Employee not found'END"
+          }
+        ]
+      },
+      {
+        "type": "SET",
+        "name": "@emp_message",
+        "value": "'Employee found'"
+      },
+      {
+        "type": "SET",
+        "name": "@emp_message",
+        "value": "'Employee not found'"
+      }
+    ]
+  }
+]

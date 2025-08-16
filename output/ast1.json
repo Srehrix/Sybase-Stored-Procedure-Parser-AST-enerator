@@ -1,0 +1,31 @@
+[
+  {
+    "proc_name": "",
+    "params": [
+      {
+        "name": "@id",
+        "type": "INT",
+        "mode": "IN"
+      },
+      {
+        "name": "@name",
+        "type": "VARCHAR(100)",
+        "mode": "IN"
+      }
+    ],
+    "return_type": "VOID",
+    "variables": [],
+    "statements": [
+      {
+        "type": "SET",
+        "name": "@total",
+        "value": "100"
+      },
+      {
+        "type": "SET",
+        "name": "@name",
+        "value": "'Hari'"
+      }
+    ]
+  }
+]
