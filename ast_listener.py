@@ -187,13 +187,18 @@ class ASTBuilder(TSqlParserListener):
         return [v for v in all_vars if not v.startswith('@@')]
 
     def enterTry_catch_statement(self, ctx):
-        try_block = {"type": "BEGIN_TRY", "body": []}
-        self._append_statement(try_block)
-        self.block_stack.append(try_block)
-        self.statement_stack.append(try_block["body"])
+        try:
+            try_block = {"type": "BEGIN_TRY", "body": []}
+            self._append_statement(try_block)
 
-        # ✅ Add BEGIN_TRANSACTION at start
-        try_block["body"].append({"type": "BEGIN_TRANSACTION"})
+            # Push TRY block onto the stack
+            self.block_stack.append(try_block)
+            self.statement_stack.append(try_block["body"])
+
+            # ✅ Automatically add BEGIN_TRANSACTION at start of TRY
+            try_block["body"].append({"type": "BEGIN_TRANSACTION"})
+        except Exception as e:
+            print(f"❌ Error in enterTry_catch_statement: {e}")
 
     def exitTry_catch_statement(self, ctx):
         try:
@@ -201,33 +206,23 @@ class ASTBuilder(TSqlParserListener):
                 self.statement_stack.pop()
             if self.block_stack:
                 try_block = self.block_stack.pop()
-                # ✅ Add COMMIT at the end of TRY block
+                # ✅ Automatically add COMMIT at the end of TRY
                 try_block["body"].append({"type": "COMMIT"})
         except Exception as e:
-            print(f"Error in exitTry_catch_statement: {e}")
+            print(f"❌ Error in exitTry_catch_statement: {e}")
 
     def enterCatch_block(self, ctx):
         try:
-            # ✅ Mark that we are inside CATCH
-            self.in_catch_block = True
-
-            # Create BEGIN_CATCH node
             catch_block = {"type": "BEGIN_CATCH", "body": []}
-
-            # Attach to current TRY block or global statements
             self._append_statement(catch_block)
 
-            # Push the CATCH block body to the stack
+            # Push CATCH body to statement stack
             self.statement_stack.append(catch_block["body"])
         except Exception as e:
             print(f"❌ Error in enterCatch_block: {e}")
 
     def exitCatch_block(self, ctx):
         try:
-            # ✅ Reset the CATCH flag
-            self.in_catch_block = False
-
-            # Pop from statement stack if it has elements
             if self.statement_stack:
                 self.statement_stack.pop()
         except Exception as e:
@@ -494,59 +489,47 @@ class ASTBuilder(TSqlParserListener):
                 "else": []
             }
 
-            # ✅ Detect and register variables inside condition
+            # Detect variables in condition
             if ctx.search_condition():
-                condition_text = ctx.search_condition().getText()
-                vars_in_condition = self._extract_vars(condition_text)
+                vars_in_condition = self._extract_vars(
+                    ctx.search_condition().getText())
                 for var in vars_in_condition:
                     self._ensure_variable_exists(var)
 
-            # ✅ Attach IF block to correct context
-            if self.statement_stack:
-                self.statement_stack[-1].append(if_block)
-            else:
-                if not hasattr(self, "global_statements"):
-                    self.global_statements = []
-                self.global_statements.append(if_block)
+            # Attach IF block to current context
+            self._append_statement(if_block)
 
             # Push THEN branch
             self.block_stack.append(if_block)
             self.statement_stack.append(if_block["then"])
 
-            # Track last IF for potential ELSE handling
+            # Track IF for ELSE handling
             self.last_if_block = if_block
         except Exception as e:
             print(f"❌ Error in enterIf_statement: {e}")
 
     def exitIf_statement(self, ctx):
         try:
-            # If we are finishing THEN and an ELSE exists, switch to ELSE
-            if self.last_if_block and ctx.ELSE():
-                # Switch to ELSE branch
-                if self.statement_stack:
-                    self.statement_stack.pop()
-                self.statement_stack.append(self.last_if_block["else"])
-            else:
-                # No ELSE, just pop THEN
-                if self.statement_stack:
-                    self.statement_stack.pop()
-                if self.block_stack:
-                    self.block_stack.pop()
-                self.last_if_block = None
+            # Pop THEN branch
+            if self.statement_stack:
+                self.statement_stack.pop()
+            if self.block_stack:
+                self.block_stack.pop()
+            self.last_if_block = None  # Reset IF tracking
         except Exception as e:
             print(f"❌ Error in exitIf_statement: {e}")
 
     def enterElse_statement(self, ctx):
         try:
-            if self.block_stack:
-                current_if = self.block_stack[-1]
+            if self.last_if_block:
                 # Switch to ELSE branch
-                self.statement_stack.append(current_if["else"])
+                self.statement_stack.append(self.last_if_block["else"])
         except Exception as e:
             print(f"❌ Error in enterElse_statement: {e}")
 
     def exitElse_statement(self, ctx):
         try:
+            # Pop ELSE branch
             if self.statement_stack:
                 self.statement_stack.pop()
         except Exception as e:
@@ -620,6 +603,27 @@ class ASTBuilder(TSqlParserListener):
             "statements": block
         })
 
+    def enterBegin_catch(self, ctx):
+        try:
+            catch_block = {
+                "type": "BEGIN_CATCH",
+                "body": []
+            }
+            self._append_statement(catch_block)
+            self.block_stack.append(catch_block)
+            self.statement_stack.append(catch_block["body"])
+        except Exception as e:
+            print(f"Error in enterBegin_catch: {e}")
+
+    def exitBegin_catch(self, ctx):
+        try:
+            if self.statement_stack:
+                self.statement_stack.pop()
+            if self.block_stack:
+                self.block_stack.pop()
+        except Exception as e:
+            print(f"Error in exitBegin_catch: {e}")
+
     def enterPrint_statement(self, ctx):
         try:
             text = ctx.getText()
@@ -645,29 +649,49 @@ class ASTBuilder(TSqlParserListener):
 
     def enterRaiseerror_statement(self, ctx):
         try:
+            # Extract full RAISERROR text as written in SQL
             full_text = ctx.start.getInputStream().getText(ctx.start.start, ctx.stop.stop)
+
+            # Normalize the text (remove extra spaces, line breaks)
             raise_stmt = {
                 "type": "RAISE",
                 "level": "ERROR",
+                # Keep original RAISERROR syntax
                 "message": normalize_sql(full_text)
             }
+
+            # Append to the current statement stack
             self._append_statement(raise_stmt)
         except Exception as e:
-            print(f"Error in enterRaiseerror_statement: {e}")
+            print(f"❌ Error in enterRaiseerror_statement: {e}")
+
+    def enterAssignment_statement(self, ctx):
+        try:
+            var_name = ctx.LOCAL_ID().getText() if ctx.LOCAL_ID() else "<UNKNOWN>"
+            expr = ctx.expression().getText() if ctx.expression() else "<UNKNOWN_EXPR>"
+            self._append_statement({
+                "type": "SET",
+                "name": var_name,
+                "value": expr
+            })
+        except Exception as e:
+            print(f"❌ Error in enterAssignment_statement: {e}")
+
+    def enterBegin_transaction(self, ctx):
+        try:
+            self._append_statement({"type": "BEGIN_TRANSACTION"})
+        except Exception as e:
+            print(f"Error in enterBegin_transaction: {e}")
 
     def enterCommit_transaction(self, ctx):
         try:
-            self._append_statement({
-                "type": "COMMIT"
-            })
+            self._append_statement({"type": "COMMIT"})
         except Exception as e:
             print(f"Error in enterCommit_transaction: {e}")
 
     def enterRollback_transaction(self, ctx):
         try:
-            self._append_statement({
-                "type": "ROLLBACK"
-            })
+            self._append_statement({"type": "ROLLBACK"})
         except Exception as e:
             print(f"Error in enterRollback_transaction: {e}")
 
