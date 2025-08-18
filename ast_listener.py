@@ -29,6 +29,9 @@ class ASTBuilder(TSqlParserListener):
         self.block_stack = []
         self.last_if_block = None
         self.schema_registry = {}
+        self.current_ctes = []
+        self.in_with_clause = False
+        self.collect_main_query = False
         self.schema_metadata = {}
 
     def _append_statement(self, stmt):
@@ -270,7 +273,33 @@ class ASTBuilder(TSqlParserListener):
         })
 
     def enterSelect_statement(self, ctx):
+        # ✅ Skip SELECT inside a CTE (we already processed it in enterCommon_table_expression)
+        if getattr(self, 'skip_next_cte_select', False):
+            self.skip_next_cte_select = False
+            return
+
+        # ✅ If this SELECT is the main query after WITH_CTE
+        if getattr(self, 'waiting_for_main_select', False):
+            self.waiting_for_main_select = False
+            try:
+                raw_sql = ctx.start.getInputStream().getText(
+                    ctx.start.start, ctx.stop.stop).strip()
+                normalized_sql = normalize_sql(raw_sql)
+
+                if hasattr(self, 'current_ctes_block') and self.current_ctes_block:
+                    self.current_ctes_block["main_query"] = {
+                        "type": "RAW_SQL",
+                        "query": normalized_sql
+                    }
+                    # ✅ Reset after attaching main query
+                    self.current_ctes_block = None
+                return
+            except Exception as e:
+                print(f"❌ Error attaching main query after WITH_CTE: {e}")
+                return
+
         try:
+            # ✅ Check if inside cursor
             parent = ctx.parentCtx
             inside_cursor = False
             while parent:
@@ -283,32 +312,25 @@ class ASTBuilder(TSqlParserListener):
                 ctx.start.start, ctx.stop.stop).strip()
             normalized_sql = normalize_sql(raw_sql)
 
-            # Detect SELECT assignment → convert to SET
-            # Detect SELECT assignment with optional FROM clause
+            # ✅ Detect SELECT assignment → convert to SET
             assign_match = re.match(
                 r"SELECT\s+(@\w+)\s*=\s*([^\s,]+)", normalized_sql, re.IGNORECASE)
-
             if assign_match:
                 target_var = assign_match.group(1).strip()
                 value_expr = normalize_sql(assign_match.group(2).strip())
 
-                # ✅ Try to find table name for schema inference
+                # Infer type from schema if possible
                 from_match = re.search(
                     r"\bFROM\s+([^\s]+)", normalized_sql, re.IGNORECASE)
                 from_table = from_match.group(
                     1).strip() if from_match else None
-
-                # ✅ Extract column name if possible
                 col_match = re.match(r"([A-Za-z0-9_]+)", value_expr)
                 col_name = col_match.group(1) if col_match else None
-
-                # ✅ Infer type from schema if possible
                 inferred_type = None
                 if col_name and from_table:
                     inferred_type = self._infer_type_from_schema(
                         from_table, col_name)
 
-                # ✅ Register variable
                 self._ensure_variable_exists(target_var, inferred_type)
 
                 self._append_statement({
@@ -318,7 +340,7 @@ class ASTBuilder(TSqlParserListener):
                 })
                 return
 
-            # SELECT INTO
+            # ✅ Detect SELECT INTO
             if re.search(r"\bINTO\b", normalized_sql, re.IGNORECASE):
                 into_vars = []
                 match = re.search(r"\bINTO\s+(.+?)\s+FROM",
@@ -327,10 +349,8 @@ class ASTBuilder(TSqlParserListener):
                     into_part = match.group(1)
                     into_vars = [v.strip()
                                  for v in re.split(r",\s*", into_part)]
-
                 for var in into_vars:
                     self._ensure_variable_exists(var, None)
-
                 self._append_statement({
                     "type": "SELECT_INTO",
                     "query": normalized_sql,
@@ -343,11 +363,10 @@ class ASTBuilder(TSqlParserListener):
                 self.current_cursor_columns = self._extract_select_columns(
                     normalized_sql)
 
-            # Normal SELECT
+            # ✅ Normal SELECT
             self._append_statement({
-                "type": "SELECT_INTO",
-                "query": normalized_sql,
-                "into_vars": []
+                "type": "SELECT",
+                "query": normalized_sql
             })
 
         except Exception as e:
@@ -1025,6 +1044,48 @@ class ASTBuilder(TSqlParserListener):
             self._append_statement(drop_stmt)
         except Exception as e:
             print(f"❌ Error in enterDrop_table: {e}")
+
+    def enterCommon_table_expression(self, ctx):
+        try:
+            cte_name = ctx.id_().getText() if ctx.id_() else "<UNKNOWN_CTE>"
+
+            if ctx.select_statement():
+                start_index = ctx.select_statement().start.start
+                stop_index = ctx.select_statement().stop.stop
+                token_stream = ctx.start.getInputStream()
+                inner_query_text = token_stream.getText(
+                    start_index, stop_index)
+            else:
+                inner_query_text = "<UNKNOWN_QUERY>"
+
+            normalized_query = normalize_sql(inner_query_text)
+
+            # ✅ Create or reuse WITH_CTE block
+            if not hasattr(self, 'current_ctes_block'):
+                self.current_ctes_block = {
+                    "type": "WITH_CTE",
+                    "cte_list": [],
+                    "main_query": None
+                }
+                self._append_statement(self.current_ctes_block)
+
+            self.current_ctes_block["cte_list"].append({
+                "name": cte_name,
+                "query": {
+                    "type": "RAW_SQL",
+                    "query": normalized_query
+                }
+            })
+
+            # ✅ Skip this SELECT when enterSelect_statement is called
+            self.skip_next_cte_select = True
+
+        except Exception as e:
+            print(f"❌ Error in enterCommon_table_expression: {e}")
+
+    def exitWith_expression(self, ctx):
+        # ✅ Tell the parser that the next SELECT is the main query
+        self.waiting_for_main_select = True
 
     def enterCreate_procedure(self, ctx):
         try:
