@@ -116,7 +116,7 @@ This tool fits into the **modernization pipeline**:
 
 ```mermaid
 flowchart TD
-    A [Sybase .sql Files] --> B [Tool 1: Indexer]
+    A[Sybase .sql Files] --> B[Tool 1: Indexer]
     A --> C[Tool 2: Parser (This Tool)]
     B --> D[Tool 3: Documentation Generator]
     C --> D
@@ -127,6 +127,7 @@ flowchart TD
     E --> G
     D --> G
     G --> H[Postgres .sql Files]
+
 
 ```
 
