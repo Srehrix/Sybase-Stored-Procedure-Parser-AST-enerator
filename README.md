@@ -1,4 +1,3 @@
-Here’s the **final README.md** without the screenshots section and fully polished:
 
 ---
 
@@ -117,7 +116,7 @@ This tool fits into the **modernization pipeline**:
 
 ```mermaid
 flowchart TD
-    A[Sybase .sql Files] --> B[Tool 1: Indexer]
+    A [Sybase .sql Files] --> B [Tool 1: Indexer]
     A --> C[Tool 2: Parser (This Tool)]
     B --> D[Tool 3: Documentation Generator]
     C --> D
@@ -129,8 +128,6 @@ flowchart TD
     D --> G
     G --> H[Postgres .sql Files]
 
-style A fill:#d4f7dc,stroke:#1b5e20,stroke-width:2px
-style H fill:#ffe0b2,stroke:#e65100,stroke-width:2px
 ```
 
 ---
