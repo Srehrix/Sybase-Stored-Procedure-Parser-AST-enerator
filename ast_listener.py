@@ -36,21 +36,38 @@ class ASTBuilder(TSqlParserListener):
 
     def _append_statement(self, stmt):
         try:
+            target = None
             if self.statement_stack:
-                self.statement_stack[-1].append(stmt)
+                target = self.statement_stack[-1]
             elif self.current_proc:
-                self.current_proc["statements"].append(stmt)
+                target = self.current_proc["statements"]
             else:
                 return
 
-            # ✅ Special handling for IF: Add DROP as RAW_SQL to last_if_block
-            if self.last_if_block and stmt.get("type") in ["DROP_TABLE", "DROP_PROCEDURE"]:
-                raw_sql = {
-                    "type": "RAW_SQL",
-                    "query": f"DROP {'TABLE' if stmt['type'] == 'DROP_TABLE' else 'PROCEDURE'} {stmt.get('table') or stmt.get('procedure')}"
-                }
-                if raw_sql not in self.last_if_block["then"]:
-                    self.last_if_block["then"].append(raw_sql)
+            # Check if an identical type+query already exists
+            existing = next((s for s in target if s.get("type") == stmt.get(
+                "type") and s.get("query") == stmt.get("query")), None)
+            if existing:
+                # Merge missing fields (e.g., columns)
+                for k, v in stmt.items():
+                    if k not in existing:
+                        existing[k] = v
+            else:
+                target.append(stmt)
+
+            # Handle IF/DROP logic as before
+            if self.last_if_block:
+                t = stmt.get("type")
+                if t in ["DROP_TABLE", "DROP_PROCEDURE"]:
+                    raw_sql = {
+                        "type": "RAW_SQL",
+                        "query": f"DROP {'TABLE' if t == 'DROP_TABLE' else 'PROCEDURE'} {stmt.get('table') or stmt.get('procedure')}"
+                    }
+                    if raw_sql not in self.last_if_block["then"]:
+                        self.last_if_block["then"].append(raw_sql)
+                elif t == "RAW_SQL" and stmt.get("query", "").upper().startswith("DROP "):
+                    if stmt not in self.last_if_block["then"]:
+                        self.last_if_block["then"].append(stmt)
 
         except Exception as e:
             print(f"❌ Error in _append_statement: {e}")
@@ -117,31 +134,33 @@ class ASTBuilder(TSqlParserListener):
 
     def enterDeclare_statement(self, ctx):
         try:
-            if getattr(self, "in_catch_block", False):
-                return
-
             if not self.current_proc:
                 return
 
+            decls = []
             for decl in ctx.declare_local():
                 var_name = decl.LOCAL_ID().getText()
-                var_type = decl.data_type().getText() if decl.data_type() else "<UNKNOWN>"
-                default_val = decl.expression().getText() if decl.expression() else None
+                var_type = normalize_sql(
+                    decl.data_type().getText()) if decl.data_type() else "<UNKNOWN>"
+                default_val = normalize_sql(
+                    decl.expression().getText()) if decl.expression() else None
 
-                variable = {
-                    "name": var_name,
-                    "type": var_type if var_type else "<UNKNOWN>"
-                }
-                if default_val:
-                    variable["default"] = normalize_sql(default_val)
+                if getattr(self, "in_catch_block", False):
+                    # Inside CATCH → add to CATCH block
+                    if not any(d["name"] == var_name for d in decls):
+                        decls.append({"name": var_name, "type": var_type})
+                else:
+                    # Normal procedure-level variable
+                    self._ensure_variable_exists(var_name, var_type)
+                    if default_val:
+                        for v in self.current_proc["variables"]:
+                            if v["name"] == var_name:
+                                v["default"] = default_val
+                                break
 
-                # Avoid duplicates
-                self._ensure_variable_exists(var_name, var_type)
-                if default_val:
-                    for v in self.current_proc["variables"]:
-                        if v["name"] == var_name:
-                            v["default"] = normalize_sql(default_val)
-                            break
+            # Append DECLARE statement inside CATCH
+            if getattr(self, "in_catch_block", False) and decls:
+                self._append_statement({"type": "DECLARE", "variables": decls})
 
         except Exception as e:
             print(f"❌ Error in enterDeclare_statement: {e}")
@@ -214,22 +233,25 @@ class ASTBuilder(TSqlParserListener):
         except Exception as e:
             print(f"❌ Error in exitTry_catch_statement: {e}")
 
-    def enterCatch_block(self, ctx):
+    def enterCatch_handler(self, ctx):
         try:
-            catch_block = {"type": "BEGIN_CATCH", "body": []}
-            self._append_statement(catch_block)
-
-            # Push CATCH body to statement stack
-            self.statement_stack.append(catch_block["body"])
+            self.in_catch_block = True
+            self.current_catch_block = {"type": "BEGIN_CATCH", "body": []}
+            # Push its body so inner statements go inside
+            self.statement_stack.append(self.current_catch_block["body"])
         except Exception as e:
-            print(f"❌ Error in enterCatch_block: {e}")
+            print(f"❌ Error in enterCatch_handler: {e}")
 
-    def exitCatch_block(self, ctx):
+    def exitCatch_handler(self, ctx):
         try:
+            self.in_catch_block = False
             if self.statement_stack:
                 self.statement_stack.pop()
+            if self.current_catch_block:
+                self._append_statement(self.current_catch_block)
+                self.current_catch_block = None
         except Exception as e:
-            print(f"❌ Error in exitCatch_block: {e}")
+            print(f"❌ Error in exitCatch_handler: {e}")
 
     def enterSet_statement(self, ctx):
         try:
@@ -272,6 +294,9 @@ class ASTBuilder(TSqlParserListener):
             "expression": expr if expr else None
         })
 
+    def _is_select_into(self, sql: str) -> bool:
+        return bool(re.search(r"\bINTO\b", sql, re.IGNORECASE))
+
     def enterSelect_statement(self, ctx):
         # ✅ Skip SELECT inside a CTE (we already processed it in enterCommon_table_expression)
         if getattr(self, 'skip_next_cte_select', False):
@@ -299,7 +324,7 @@ class ASTBuilder(TSqlParserListener):
                 return
 
         try:
-            # ✅ Check if inside cursor
+            # ✅ Check if inside cursor declaration
             parent = ctx.parentCtx
             inside_cursor = False
             while parent:
@@ -341,7 +366,7 @@ class ASTBuilder(TSqlParserListener):
                 return
 
             # ✅ Detect SELECT INTO
-            if re.search(r"\bINTO\b", normalized_sql, re.IGNORECASE):
+            if self._is_select_into(normalized_sql):
                 into_vars = []
                 match = re.search(r"\bINTO\s+(.+?)\s+FROM",
                                   normalized_sql, re.IGNORECASE | re.DOTALL)
@@ -358,10 +383,14 @@ class ASTBuilder(TSqlParserListener):
                 })
                 return
 
-            # ✅ If this SELECT is inside a cursor declaration, store column list
+            # ✅ Skip SELECT inside an INSERT or CURSOR
+            if getattr(self, 'in_insert', False):
+                return
+
             if inside_cursor:
                 self.current_cursor_columns = self._extract_select_columns(
                     normalized_sql)
+                return  # Do NOT append as standalone SELECT
 
             # ✅ Normal SELECT
             self._append_statement({
@@ -391,6 +420,7 @@ class ASTBuilder(TSqlParserListener):
         return cols
 
     def enterInsert_statement(self, ctx):
+        self.in_insert = True
         try:
             raw_text = ctx.start.getInputStream().getText(ctx.start.start, ctx.stop.stop)
             query = normalize_sql(raw_text)
@@ -420,22 +450,39 @@ class ASTBuilder(TSqlParserListener):
         except Exception as e:
             print(f"❌ Error parsing INSERT: {e}")
 
+    def exitInsert_statement(self, ctx):
+        self.in_insert = False
+
     def enterUpdate_statement(self, ctx):
         try:
             raw_text = ctx.start.getInputStream().getText(ctx.start.start, ctx.stop.stop)
             query = normalize_sql(raw_text)
 
-            # Extract table name after UPDATE
+            # Extract table name
             table_name = ""
-            match = re.search(r"UPDATE\s+([^\s]+)", query, re.IGNORECASE)
+            match = re.search(r"\bUPDATE\s+([^\s]+)", query, re.IGNORECASE)
             if match:
                 table_name = match.group(1)
+
+            # Extract columns from SET clause
+            columns = []
+            set_match = re.search(
+                r"\bSET\b\s+(.*?)(?:\bWHERE\b|$)", query, re.IGNORECASE | re.DOTALL)
+            if set_match:
+                set_clause = set_match.group(1)
+                for assignment in set_clause.split(","):
+                    if "=" in assignment:
+                        col = assignment.split("=")[0].strip()
+                        if col:
+                            columns.append(col)
 
             update_stmt = {
                 "type": "UPDATE",
                 "query": query,
                 "table": table_name
             }
+            if columns:
+                update_stmt["columns"] = columns
 
             self._append_statement(update_stmt)
         except Exception as e:
@@ -715,6 +762,7 @@ class ASTBuilder(TSqlParserListener):
             print(f"Error in enterRollback_transaction: {e}")
 
     def enterDeclare_cursor(self, ctx):
+        self.in_cursor = True
         try:
             cursor_name = ctx.cursor_name().getText() if ctx.cursor_name() else "<UNKNOWN>"
 
@@ -752,6 +800,9 @@ class ASTBuilder(TSqlParserListener):
 
         except Exception as e:
             print(f"Error in enterDeclare_cursor: {e}")
+
+    def exitDeclare_cursor(self, ctx):
+        self.in_cursor = False
 
     def enterOpen_cursor(self, ctx):
         try:
