@@ -1,0 +1,7 @@
+{
+  "AcmeERP.ExchangeRates": {
+    "RateToBase": "DECIMAL(18,6)",
+    "CurrencyCode": "CHAR(3)",
+    "RateDate": "DATE"
+  }
+}
