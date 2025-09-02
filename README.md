@@ -115,19 +115,31 @@ Options:
 This tool fits into the **modernization pipeline**:
 
 ```mermaid
-flowchart TD
-    A[Sybase .sql Files] --> B[Tool 1: Indexer]
-    A --> C[Tool 2: Parser (This Tool)]
-    B --> D[Tool 3: Documentation Generator]
+flowchart LR
+    A[Sybase .sql Files]
+
+    subgraph Pipeline[Modernization Pipeline]
+        B[Tool 1: Indexer]
+        C[Tool 2: Parser (This Tool)]
+        D[Tool 3: Documentation Generator]
+        E[Tool 4: Lineage Analyzer]
+        F[Tool 5: SP Transformer]
+        G[Tool 6: Validator & Report]
+    end
+
+    H[Postgres .sql Files]
+
+    A --> B
+    A --> C
+    B --> D
     C --> D
-    B --> E[Tool 4: Lineage Analyzer]
+    B --> E
     C --> E
-    C --> F[Tool 5: SP Transformer]
-    F --> G[Tool 6: Validator & Report]
+    C --> F
+    F --> G
     E --> G
     D --> G
-    G --> H[Postgres .sql Files]
-
+    G --> H
 
 ```
 
@@ -162,3 +174,4 @@ This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for d
 5. Open a Pull Request
 
 ---
+
